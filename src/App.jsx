@@ -3,7 +3,7 @@ import { Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-r
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { auth, db } from './firebase'
-import { Activity, ArrowRight, Bell, Check, ChevronRight, Dumbbell, ShieldCheck, Users, Zap, Menu, X, LogOut, LayoutDashboard, UserRound, CalendarDays, Settings, Search, CircleHelp } from 'lucide-react'
+import { Activity, ArrowRight, Bell, Check, ChevronRight, Dumbbell, ShieldCheck, Users, Zap, Menu, X, LogOut, LayoutDashboard, UserRound, CalendarDays, Settings, Search, CircleHelp, Plus, Building2, RefreshCw } from 'lucide-react'
 
 const portals = {
   owner: { label: 'Gym owner', role: 'gymOwner', title: 'Welcome back', subtitle: 'Sign in to manage your gym and members.', icon: Dumbbell },
@@ -67,9 +67,66 @@ function Protected({ expectedRole, children }) {
   return children(state)
 }
 
+
+function SuperAdminWorkspace({user,profile}) {
+  const [gyms,setGyms] = useState([])
+  const [loading,setLoading] = useState(true)
+  const [showForm,setShowForm] = useState(false)
+  const [busy,setBusy] = useState(false)
+  const [error,setError] = useState('')
+  const [success,setSuccess] = useState('')
+  const [form,setForm] = useState({gymName:'',ownerName:'',ownerEmail:'',ownerPassword:'',ownerWhatsapp:'',address:''})
+
+  async function api(path, options={}) {
+    const token = await user.getIdToken()
+    const response = await fetch(path,{...options,headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`,...options.headers}})
+    const data = await response.json().catch(()=>({}))
+    if(!response.ok) throw new Error(data.error || 'Request failed')
+    return data
+  }
+  async function loadGyms() {
+    setLoading(true); setError('')
+    try { const data=await api('/api/admin/gyms'); setGyms(data.gyms || []) }
+    catch(e) { setError(e.message) }
+    finally { setLoading(false) }
+  }
+  useEffect(()=>{loadGyms()},[])
+  function update(field,value){setForm(old=>({...old,[field]:value}))}
+  async function createGym(e) {
+    e.preventDefault(); setBusy(true); setError(''); setSuccess('')
+    try {
+      const result=await api('/api/admin/gyms',{method:'POST',body:JSON.stringify(form)})
+      setSuccess(`Gym created successfully. Gym ID: ${result.gymId}`)
+      setForm({gymName:'',ownerName:'',ownerEmail:'',ownerPassword:'',ownerWhatsapp:'',address:''})
+      setShowForm(false)
+      await loadGyms()
+    } catch(e) { setError(e.message) }
+    finally { setBusy(false) }
+  }
+  return <div className="dashboard-page"><header className="dash-top"><Brand/><div className="dash-user"><span>{profile.name || user.email}</span><button onClick={()=>signOut(auth)} title="Sign out"><LogOut size={17}/></button></div></header>
+    <div className="dash-layout"><aside className="dash-sidebar"><div className="dash-label">SUPER ADMIN</div><div className="dash-nav-active"><LayoutDashboard size={17}/> Overview</div><div className="dash-nav-muted"><Building2 size={17}/> Gyms</div><div className="dash-nav-muted"><Users size={17}/> Members</div><div className="dash-nav-muted"><CalendarDays size={17}/> Memberships</div><div className="dash-nav-muted"><Bell size={17}/> Notifications</div><div className="dash-nav-muted"><CircleHelp size={17}/> Help & support</div></aside>
+    <main className="dash-content"><div className="dash-welcome"><div><div className="section-kicker">SUPER ADMIN WORKSPACE</div><h1>Platform overview</h1><p>Manage the GymFlow platform and registered gyms.</p></div><div className="dash-date">{new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div>
+      <div className="admin-toolbar"><div><h2>Registered gyms</h2><p>{gyms.length} gym{gyms.length===1?'':'s'} on GymFlow</p></div><div className="admin-actions"><button className="admin-secondary" onClick={loadGyms} disabled={loading}><RefreshCw size={15}/> Refresh</button><button className="btn" onClick={()=>{setShowForm(!showForm);setError('');setSuccess('')}}><Plus size={16}/> Add Gym</button></div></div>
+      {error && <div className="admin-alert error">{error}</div>}{success && <div className="admin-alert success">{success}</div>}
+      {showForm && <form className="gym-form" onSubmit={createGym}><div className="gym-form-heading"><div><h3>Register a new gym</h3><p>Create the gym workspace and its owner's login.</p></div><button type="button" className="form-close" onClick={()=>setShowForm(false)}>×</button></div>
+        <div className="gym-form-grid">
+          <label>Gym name<input required value={form.gymName} onChange={e=>update('gymName',e.target.value)} placeholder="e.g. Iron Fitness"/></label>
+          <label>Owner full name<input required value={form.ownerName} onChange={e=>update('ownerName',e.target.value)} placeholder="Owner's name"/></label>
+          <label>Owner email<input type="email" required value={form.ownerEmail} onChange={e=>update('ownerEmail',e.target.value)} placeholder="owner@example.com"/></label>
+          <label>Temporary password<input type="password" required minLength="6" value={form.ownerPassword} onChange={e=>update('ownerPassword',e.target.value)} placeholder="At least 6 characters"/></label>
+          <label>Owner WhatsApp number<input required type="tel" value={form.ownerWhatsapp} onChange={e=>update('ownerWhatsapp',e.target.value)} placeholder="Country code + number"/></label>
+          <label>Gym address<input value={form.address} onChange={e=>update('address',e.target.value)} placeholder="Area, city, state"/></label>
+        </div><div className="gym-form-footer"><span>Owner can sign in using the email and temporary password.</span><button className="btn" disabled={busy}>{busy?'Creating gym…':'Create gym'} <ArrowRight size={15}/></button></div>
+      </form>}
+      <div className="gym-table-wrap"><table className="gym-table"><thead><tr><th>GYM</th><th>OWNER EMAIL</th><th>WHATSAPP</th><th>STATUS</th><th>GYM ID</th></tr></thead><tbody>
+        {loading?<tr><td colSpan="5" className="empty-state">Loading gyms…</td></tr>:gyms.length===0?<tr><td colSpan="5" className="empty-state">No gyms registered yet. Select “Add Gym” to create the first one.</td></tr>:gyms.map(g=><tr key={g.id}><td><b>{g.name}</b><small>{g.address || 'Address not provided'}</small></td><td>{g.ownerEmail || '—'}</td><td>{g.ownerWhatsapp || '—'}</td><td><span className={g.active?'status-pill active':'status-pill'}>{g.active?'Active':'Inactive'}</span></td><td className="gym-id">{g.id}</td></tr>)}
+      </tbody></table></div>
+    </main></div></div>
+}
+
 function Dashboard({type}) {
   const config = type==='superadmin' ? {role:'superAdmin',title:'Platform overview',desc:'Manage the GymFlow platform and registered gyms.',label:'SUPER ADMIN'} : type==='owner' ? {role:'gymOwner',title:'Your gym overview',desc:'Your membership operations, all in one place.',label:'GYM OWNER'} : {role:'member',title:'Your membership',desc:'Your gym membership information at a glance.',label:'MEMBER'}
-  return <Protected expectedRole={config.role}>{({user,profile})=><div className="dashboard-page"><header className="dash-top"><Brand/><div className="dash-user"><span>{profile.name || user.email}</span><button onClick={()=>signOut(auth)} title="Sign out"><LogOut size={17}/></button></div></header><div className="dash-layout"><aside className="dash-sidebar"><div className="dash-label">{config.label}</div><div className="dash-nav-active"><LayoutDashboard size={17}/> Overview</div><div className="dash-nav-muted"><Users size={17}/> {type==='member'?'My details':'Members'}</div><div className="dash-nav-muted"><CalendarDays size={17}/> Memberships</div><div className="dash-nav-muted"><Bell size={17}/> Notifications</div><div className="dash-nav-muted"><CircleHelp size={17}/> Help & support</div></aside><main className="dash-content"><div className="dash-welcome"><div><div className="section-kicker">{config.label} WORKSPACE</div><h1>{config.title}</h1><p>{config.desc}</p></div><div className="dash-date">{new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div><div className="setup-notice"><ShieldCheck size={20}/><div><b>Your account is connected</b><p>This is the secure dashboard shell. We'll connect live gym and membership data in the next build step.</p></div></div><div className="dash-placeholder-grid"><div className="dash-placeholder"><span>ACCOUNT</span><b>{profile.name || 'Account holder'}</b><small>{user.email}</small></div><div className="dash-placeholder"><span>ACCESS ROLE</span><b>{config.label}</b><small>Verified account permission</small></div><div className="dash-placeholder"><span>WORKSPACE</span><b>{profile.gymName || (type==='superadmin'?'All gyms':'Not assigned')}</b><small>{profile.gymId || 'Workspace connection pending'}</small></div></div></main></div></div>}</Protected>
+  return <Protected expectedRole={config.role}>{({user,profile})=>type==='superadmin' ? <SuperAdminWorkspace user={user} profile={profile}/> : <div className="dashboard-page"><header className="dash-top"><Brand/><div className="dash-user"><span>{profile.name || user.email}</span><button onClick={()=>signOut(auth)} title="Sign out"><LogOut size={17}/></button></div></header><div className="dash-layout"><aside className="dash-sidebar"><div className="dash-label">{config.label}</div><div className="dash-nav-active"><LayoutDashboard size={17}/> Overview</div><div className="dash-nav-muted"><Users size={17}/>{type==='member'?'My details':'Members'}</div><div className="dash-nav-muted"><CalendarDays size={17}/> Memberships</div><div className="dash-nav-muted"><Bell size={17}/> Notifications</div><div className="dash-nav-muted"><CircleHelp size={17}/> Help & support</div></aside><main className="dash-content"><div className="dash-welcome"><div><div className="section-kicker">{config.label} WORKSPACE</div><h1>{config.title}</h1><p>{config.desc}</p></div><div className="dash-date">{new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div><div className="setup-notice"><ShieldCheck size={20}/><div><b>Your account is connected</b><p>This workspace will be connected to live gym and membership data in the next build step.</p></div></div><div className="dash-placeholder-grid"><div className="dash-placeholder"><span>ACCOUNT</span><b>{profile.name || 'Account holder'}</b><small>{user.email}</small></div><div className="dash-placeholder"><span>ACCESS ROLE</span><b>{config.label}</b><small>Verified account permission</small></div><div className="dash-placeholder"><span>WORKSPACE</span><b>{profile.gymName || 'Not assigned'}</b><small>{profile.gymId || 'Workspace connection pending'}</small></div></div></main></div></div>}</Protected>
 }
 
 export default function App() {
