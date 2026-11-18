@@ -124,9 +124,50 @@ function SuperAdminWorkspace({user,profile}) {
     </main></div></div>
 }
 
+function TelegramConnection({ user, profile }) {
+  const [busy, setBusy] = useState(false)
+  const [url, setUrl] = useState('')
+  const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
+  const connected = Boolean(profile.telegramChatId)
+
+  async function createLink() {
+    setBusy(true); setError(''); setUrl(''); setCopied(false)
+    try {
+      const token = await user.getIdToken()
+      const response = await fetch('/api/telegram-connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({})
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Could not create Telegram link.')
+      setUrl(data.url)
+    } catch (e) { setError(e.message) }
+    finally { setBusy(false) }
+  }
+
+  async function copyLink() {
+    try { await navigator.clipboard.writeText(url); setCopied(true) }
+    catch { setError('Copy failed. Open the Telegram link using the button instead.') }
+  }
+
+  return <section className="telegram-card">
+    <div className="telegram-card-icon"><Bell size={21}/></div>
+    <div className="telegram-card-body">
+      <div className="telegram-card-heading"><div><h2>Telegram notifications</h2><p>Connect your Telegram chat to receive alerts for your gym only.</p></div><span className={connected ? 'telegram-state connected' : 'telegram-state'}>{connected ? 'Connected' : 'Not connected'}</span></div>
+      {connected ? <p className="telegram-connected-copy">Your gym is linked to Telegram{profile.telegramUsername ? ` (@${profile.telegramUsername})` : ''}. Expiry alerts will be sent to this chat.</p> : <p className="telegram-connected-copy">Generate a secure, single-use connection link. Open it in Telegram and press Start. The link expires after 10 minutes.</p>}
+      {error && <div className="admin-alert error">{error}</div>}
+      {url && <div className="telegram-link-box"><a href={url} target="_blank" rel="noreferrer">Open Telegram to connect <ArrowRight size={14}/></a><button type="button" className="admin-secondary" onClick={copyLink}>{copied ? 'Copied' : 'Copy link'}</button></div>}
+      <div className="telegram-actions"><button type="button" className="btn" onClick={createLink} disabled={busy}>{busy ? 'Generating link…' : connected ? 'Reconnect Telegram' : 'Connect Telegram'}</button></div>
+      <small className="telegram-note">Connecting Telegram does not send alerts yet. Membership expiry automation will be enabled after membership management is built.</small>
+    </div>
+  </section>
+}
+
 function Dashboard({type}) {
   const config = type==='superadmin' ? {role:'superAdmin',title:'Platform overview',desc:'Manage the GymFlow platform and registered gyms.',label:'SUPER ADMIN'} : type==='owner' ? {role:'gymOwner',title:'Your gym overview',desc:'Your membership operations, all in one place.',label:'GYM OWNER'} : {role:'member',title:'Your membership',desc:'Your gym membership information at a glance.',label:'MEMBER'}
-  return <Protected expectedRole={config.role}>{({user,profile})=>type==='superadmin' ? <SuperAdminWorkspace user={user} profile={profile}/> : <div className="dashboard-page"><header className="dash-top"><Brand/><div className="dash-user"><span>{profile.name || user.email}</span><button onClick={()=>signOut(auth)} title="Sign out"><LogOut size={17}/></button></div></header><div className="dash-layout"><aside className="dash-sidebar"><div className="dash-label">{config.label}</div><div className="dash-nav-active"><LayoutDashboard size={17}/> Overview</div><div className="dash-nav-muted"><Users size={17}/>{type==='member'?'My details':'Members'}</div><div className="dash-nav-muted"><CalendarDays size={17}/> Memberships</div><div className="dash-nav-muted"><Bell size={17}/> Notifications</div><div className="dash-nav-muted"><CircleHelp size={17}/> Help & support</div></aside><main className="dash-content"><div className="dash-welcome"><div><div className="section-kicker">{config.label} WORKSPACE</div><h1>{config.title}</h1><p>{config.desc}</p></div><div className="dash-date">{new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div><div className="setup-notice"><ShieldCheck size={20}/><div><b>Your account is connected</b><p>This workspace will be connected to live gym and membership data in the next build step.</p></div></div><div className="dash-placeholder-grid"><div className="dash-placeholder"><span>ACCOUNT</span><b>{profile.name || 'Account holder'}</b><small>{user.email}</small></div><div className="dash-placeholder"><span>ACCESS ROLE</span><b>{config.label}</b><small>Verified account permission</small></div><div className="dash-placeholder"><span>WORKSPACE</span><b>{profile.gymName || 'Not assigned'}</b><small>{profile.gymId || 'Workspace connection pending'}</small></div></div></main></div></div>}</Protected>
+  return <Protected expectedRole={config.role}>{({user,profile})=>type==='superadmin' ? <SuperAdminWorkspace user={user} profile={profile}/> : type==='owner' ? <div className="dashboard-page"><header className="dash-top"><Brand/><div className="dash-user"><span>{profile.name || user.email}</span><button onClick={()=>signOut(auth)} title="Sign out"><LogOut size={17}/></button></div></header><div className="dash-layout"><aside className="dash-sidebar"><div className="dash-label">GYM OWNER</div><div className="dash-nav-active"><LayoutDashboard size={17}/> Overview</div><div className="dash-nav-muted"><Users size={17}/> Members</div><div className="dash-nav-muted"><CalendarDays size={17}/> Memberships</div><div className="dash-nav-muted"><Bell size={17}/> Notifications</div><div className="dash-nav-muted"><CircleHelp size={17}/> Help & support</div></aside><main className="dash-content"><div className="dash-welcome"><div><div className="section-kicker">GYM OWNER WORKSPACE</div><h1>Your gym overview</h1><p>Manage your gym and notification preferences.</p></div><div className="dash-date">{new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div><div className="setup-notice"><ShieldCheck size={20}/><div><b>Your account is connected</b><p>{profile.gymName || 'Your gym'} · {profile.gymId || 'Gym workspace'}</p></div></div><TelegramConnection user={user} profile={profile}/><div className="dash-placeholder-grid"><div className="dash-placeholder"><span>ACCOUNT</span><b>{profile.name || 'Account holder'}</b><small>{user.email}</small></div><div className="dash-placeholder"><span>GYM</span><b>{profile.gymName || 'Your gym'}</b><small>{profile.gymId || 'Gym workspace'}</small></div><div className="dash-placeholder"><span>TELEGRAM</span><b>{profile.telegramChatId ? 'Connected' : 'Not connected'}</b><small>Membership alerts setup</small></div></div></main></div></div> : <div className="dashboard-page"><header className="dash-top"><Brand/><div className="dash-user"><span>{profile.name || user.email}</span><button onClick={()=>signOut(auth)} title="Sign out"><LogOut size={17}/></button></div></header><div className="dash-layout"><aside className="dash-sidebar"><div className="dash-label">{config.label}</div><div className="dash-nav-active"><LayoutDashboard size={17}/> Overview</div><div className="dash-nav-muted"><Users size={17}/>{type==='member'?'My details':'Members'}</div><div className="dash-nav-muted"><CalendarDays size={17}/> Memberships</div><div className="dash-nav-muted"><Bell size={17}/> Notifications</div><div className="dash-nav-muted"><CircleHelp size={17}/> Help & support</div></aside><main className="dash-content"><div className="dash-welcome"><div><div className="section-kicker">{config.label} WORKSPACE</div><h1>{config.title}</h1><p>{config.desc}</p></div><div className="dash-date">{new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div><div className="setup-notice"><ShieldCheck size={20}/><div><b>Your account is connected</b><p>This workspace will be connected to live gym and membership data in the next build step.</p></div></div><div className="dash-placeholder-grid"><div className="dash-placeholder"><span>ACCOUNT</span><b>{profile.name || 'Account holder'}</b><small>{user.email}</small></div><div className="dash-placeholder"><span>ACCESS ROLE</span><b>{config.label}</b><small>Verified account permission</small></div><div className="dash-placeholder"><span>WORKSPACE</span><b>{profile.gymName || 'Not assigned'}</b><small>{profile.gymId || 'Workspace connection pending'}</small></div></div></main></div></div>}</Protected>
 }
 
 export default function App() {

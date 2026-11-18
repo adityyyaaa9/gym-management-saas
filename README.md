@@ -48,3 +48,17 @@ The Super Admin dashboard now calls the server-side endpoint `POST /api/admin/gy
 The service account must belong to the same Firebase project as the frontend. The existing Firestore rules can remain restrictive: this endpoint uses the Admin SDK on the server, which bypasses Firestore client rules. The API independently verifies the caller's Firebase ID token and Super Admin profile before allowing access.
 
 The gym owner receives an email/password login. Share the temporary password securely and ask the owner to change it after first sign-in; password reset flow should be added before broad rollout.
+
+## Telegram owner connection (initial integration)
+The Gym Owner dashboard includes a secure Telegram connection-link flow. The bot token must remain server-side in Vercel environment variables.
+
+Add these server-only variables in Vercel → Settings → Environment Variables:
+- `TELEGRAM_BOT_TOKEN`: token from BotFather (do not put it in GitHub or any `VITE_` variable).
+- `TELEGRAM_BOT_USERNAME`: bot username without the leading `@`.
+- `TELEGRAM_WEBHOOK_SECRET`: a long random secret (at least 32 characters).
+
+The Telegram webhook endpoint is `/api/telegram-webhook`. After deploying, configure Telegram's webhook using the Bot API `setWebhook` method with:
+- URL: `https://YOUR-VERCEL-DOMAIN/api/telegram-webhook`
+- `secret_token`: the exact value of `TELEGRAM_WEBHOOK_SECRET`
+
+Keep the webhook secret private. The bot token and webhook secret must never be committed to GitHub. The owner dashboard's Connect Telegram button creates a one-time link valid for 10 minutes. Membership-expiry message delivery and the scheduled expiry processor are not included in this initial connection step yet.
