@@ -4,5 +4,11 @@
       "source": "/((?!api/).*)",
       "destination": "/"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron-membership-expiry",
+      "schedule": "30 3 * * *"
+    }
   ]
 }
