@@ -165,9 +165,76 @@ function TelegramConnection({ user, profile }) {
   </section>
 }
 
+function MembersWorkspace({ user }) {
+  const empty = { name: '', phone: '', age: '', gender: '' }
+  const [members, setMembers] = useState([])
+  const [form, setForm] = useState(empty)
+  const [editing, setEditing] = useState('')
+  const [showForm, setShowForm] = useState(false)
+  const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+
+  async function request(method, body, id) {
+    const token = await user.getIdToken()
+    const response = await fetch(`/api/owner-members${id ? `?id=${encodeURIComponent(id)}` : ''}`, {
+      method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      ...(body ? { body: JSON.stringify(body) } : {})
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'Member request failed.')
+    return data
+  }
+  async function load() {
+    setLoading(true); setError('')
+    try { const data = await request('GET'); setMembers(data.members || []) }
+    catch (e) { setError(e.message) }
+    finally { setLoading(false) }
+  }
+  useEffect(() => { load() }, [])
+  function startAdd() { setEditing(''); setForm(empty); setError(''); setSuccess(''); setShowForm(true) }
+  function startEdit(member) { setEditing(member.id); setForm({ name: member.name || '', phone: member.phone || '', age: member.age ?? '', gender: member.gender || '' }); setError(''); setSuccess(''); setShowForm(true) }
+  async function save(e) {
+    e.preventDefault(); setBusy(true); setError(''); setSuccess('')
+    try {
+      const payload = { ...form, age: form.age === '' ? null : Number(form.age) }
+      await request(editing ? 'PATCH' : 'POST', editing ? { ...payload, id: editing } : payload, editing || undefined)
+      setSuccess(editing ? 'Member updated.' : 'Member added successfully.')
+      setShowForm(false); setForm(empty); setEditing(''); await load()
+    } catch (e) { setError(e.message) }
+    finally { setBusy(false) }
+  }
+  async function remove(member) {
+    if (!window.confirm(`Delete ${member.name}'s member record? This cannot be undone.`)) return
+    setError(''); setSuccess('')
+    try { await request('DELETE', { id: member.id }, member.id); setMembers(list => list.filter(x => x.id !== member.id)); setSuccess('Member deleted.') }
+    catch (e) { setError(e.message) }
+  }
+  const visible = members.filter(m => `${m.name} ${m.phone}`.toLowerCase().includes(search.toLowerCase()))
+  return <section className="members-workspace">
+    <div className="admin-toolbar"><div><h2>Members</h2><p>Add and manage the people who belong to your gym.</p></div><div className="admin-actions"><button className="admin-secondary" onClick={load} disabled={loading}><RefreshCw size={14}/> Refresh</button><button className="btn" onClick={startAdd}><Plus size={15}/> Add member</button></div></div>
+    {error && <div className="admin-alert error">{error}</div>}{success && <div className="admin-alert success">{success}</div>}
+    {showForm && <form className="gym-form" onSubmit={save}><div className="gym-form-heading"><div><h3>{editing ? 'Edit member' : 'Add a member'}</h3><p>Name and phone number are required.</p></div><button type="button" className="form-close" onClick={()=>setShowForm(false)}>×</button></div>
+      <div className="gym-form-grid">
+        <label>Full name<input required maxLength="100" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Member's full name"/></label>
+        <label>Phone number<input required type="tel" maxLength="30" value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="e.g. +91 98765 43210"/></label>
+        <label>Age (optional)<input type="number" min="1" max="120" value={form.age} onChange={e=>setForm({...form,age:e.target.value})} placeholder="Age"/></label>
+        <label>Gender (optional)<select value={form.gender} onChange={e=>setForm({...form,gender:e.target.value})}><option value="">Select gender</option><option>Male</option><option>Female</option><option>Other</option><option>Prefer not to say</option></select></label>
+      </div><div className="gym-form-footer"><span>Member records are stored inside your gym's workspace.</span><button className="btn" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save changes' : 'Add member'} <ArrowRight size={15}/></button></div>
+    </form>}
+    <div className="members-search"><Search size={15}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by member name or phone"/></div>
+    <div className="gym-table-wrap"><table className="gym-table members-table"><thead><tr><th>MEMBER</th><th>PHONE</th><th>AGE</th><th>GENDER</th><th>ACTIONS</th></tr></thead><tbody>
+      {loading ? <tr><td colSpan="5" className="empty-state">Loading members…</td></tr> : visible.length === 0 ? <tr><td colSpan="5" className="empty-state">{search ? 'No matching members.' : 'No members added yet. Select “Add member” to get started.'}</td></tr> : visible.map(m=><tr key={m.id}><td><b>{m.name}</b><small>Added to your gym</small></td><td>{m.phone}</td><td>{m.age || '—'}</td><td>{m.gender || '—'}</td><td><div className="member-row-actions"><button className="admin-secondary" onClick={()=>startEdit(m)}>Edit</button><button className="admin-secondary danger-action" onClick={()=>remove(m)}>Delete</button></div></td></tr>)}
+    </tbody></table></div>
+    <p className="telegram-note">Membership plans, payment records and expiry alerts will be added in the next module.</p>
+  </section>
+}
+
 function Dashboard({type}) {
   const config = type==='superadmin' ? {role:'superAdmin',title:'Platform overview',desc:'Manage the GymFlow platform and registered gyms.',label:'SUPER ADMIN'} : type==='owner' ? {role:'gymOwner',title:'Your gym overview',desc:'Your membership operations, all in one place.',label:'GYM OWNER'} : {role:'member',title:'Your membership',desc:'Your gym membership information at a glance.',label:'MEMBER'}
-  return <Protected expectedRole={config.role}>{({user,profile})=>type==='superadmin' ? <SuperAdminWorkspace user={user} profile={profile}/> : type==='owner' ? <div className="dashboard-page"><header className="dash-top"><Brand/><div className="dash-user"><span>{profile.name || user.email}</span><button onClick={()=>signOut(auth)} title="Sign out"><LogOut size={17}/></button></div></header><div className="dash-layout"><aside className="dash-sidebar"><div className="dash-label">GYM OWNER</div><div className="dash-nav-active"><LayoutDashboard size={17}/> Overview</div><div className="dash-nav-muted"><Users size={17}/> Members</div><div className="dash-nav-muted"><CalendarDays size={17}/> Memberships</div><div className="dash-nav-muted"><Bell size={17}/> Notifications</div><div className="dash-nav-muted"><CircleHelp size={17}/> Help & support</div></aside><main className="dash-content"><div className="dash-welcome"><div><div className="section-kicker">GYM OWNER WORKSPACE</div><h1>Your gym overview</h1><p>Manage your gym and notification preferences.</p></div><div className="dash-date">{new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div><div className="setup-notice"><ShieldCheck size={20}/><div><b>Your account is connected</b><p>{profile.gymName || 'Your gym'} · {profile.gymId || 'Gym workspace'}</p></div></div><TelegramConnection user={user} profile={profile}/><div className="dash-placeholder-grid"><div className="dash-placeholder"><span>ACCOUNT</span><b>{profile.name || 'Account holder'}</b><small>{user.email}</small></div><div className="dash-placeholder"><span>GYM</span><b>{profile.gymName || 'Your gym'}</b><small>{profile.gymId || 'Gym workspace'}</small></div><div className="dash-placeholder"><span>TELEGRAM</span><b>{profile.telegramChatId ? 'Connected' : 'Not connected'}</b><small>Membership alerts setup</small></div></div></main></div></div> : <div className="dashboard-page"><header className="dash-top"><Brand/><div className="dash-user"><span>{profile.name || user.email}</span><button onClick={()=>signOut(auth)} title="Sign out"><LogOut size={17}/></button></div></header><div className="dash-layout"><aside className="dash-sidebar"><div className="dash-label">{config.label}</div><div className="dash-nav-active"><LayoutDashboard size={17}/> Overview</div><div className="dash-nav-muted"><Users size={17}/>{type==='member'?'My details':'Members'}</div><div className="dash-nav-muted"><CalendarDays size={17}/> Memberships</div><div className="dash-nav-muted"><Bell size={17}/> Notifications</div><div className="dash-nav-muted"><CircleHelp size={17}/> Help & support</div></aside><main className="dash-content"><div className="dash-welcome"><div><div className="section-kicker">{config.label} WORKSPACE</div><h1>{config.title}</h1><p>{config.desc}</p></div><div className="dash-date">{new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div><div className="setup-notice"><ShieldCheck size={20}/><div><b>Your account is connected</b><p>This workspace will be connected to live gym and membership data in the next build step.</p></div></div><div className="dash-placeholder-grid"><div className="dash-placeholder"><span>ACCOUNT</span><b>{profile.name || 'Account holder'}</b><small>{user.email}</small></div><div className="dash-placeholder"><span>ACCESS ROLE</span><b>{config.label}</b><small>Verified account permission</small></div><div className="dash-placeholder"><span>WORKSPACE</span><b>{profile.gymName || 'Not assigned'}</b><small>{profile.gymId || 'Workspace connection pending'}</small></div></div></main></div></div>}</Protected>
+  return <Protected expectedRole={config.role}>{({user,profile})=>type==='superadmin' ? <SuperAdminWorkspace user={user} profile={profile}/> : type==='owner' ? <div className="dashboard-page"><header className="dash-top"><Brand/><div className="dash-user"><span>{profile.name || user.email}</span><button onClick={()=>signOut(auth)} title="Sign out"><LogOut size={17}/></button></div></header><div className="dash-layout"><aside className="dash-sidebar"><div className="dash-label">GYM OWNER</div><div className="dash-nav-active"><LayoutDashboard size={17}/> Overview</div><div className="dash-nav-muted"><Users size={17}/> Members</div><div className="dash-nav-muted"><CalendarDays size={17}/> Memberships</div><div className="dash-nav-muted"><Bell size={17}/> Notifications</div><div className="dash-nav-muted"><CircleHelp size={17}/> Help & support</div></aside><main className="dash-content"><div className="dash-welcome"><div><div className="section-kicker">GYM OWNER WORKSPACE</div><h1>Your gym overview</h1><p>Manage your gym and notification preferences.</p></div><div className="dash-date">{new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div><div className="setup-notice"><ShieldCheck size={20}/><div><b>Your account is connected</b><p>{profile.gymName || 'Your gym'} · {profile.gymId || 'Gym workspace'}</p></div></div><TelegramConnection user={user} profile={profile}/><MembersWorkspace user={user}/><div className="dash-placeholder-grid"><div className="dash-placeholder"><span>ACCOUNT</span><b>{profile.name || 'Account holder'}</b><small>{user.email}</small></div><div className="dash-placeholder"><span>GYM</span><b>{profile.gymName || 'Your gym'}</b><small>{profile.gymId || 'Gym workspace'}</small></div><div className="dash-placeholder"><span>TELEGRAM</span><b>{profile.telegramChatId ? 'Connected' : 'Not connected'}</b><small>Membership alerts setup</small></div></div></main></div></div> : <div className="dashboard-page"><header className="dash-top"><Brand/><div className="dash-user"><span>{profile.name || user.email}</span><button onClick={()=>signOut(auth)} title="Sign out"><LogOut size={17}/></button></div></header><div className="dash-layout"><aside className="dash-sidebar"><div className="dash-label">{config.label}</div><div className="dash-nav-active"><LayoutDashboard size={17}/> Overview</div><div className="dash-nav-muted"><Users size={17}/>{type==='member'?'My details':'Members'}</div><div className="dash-nav-muted"><CalendarDays size={17}/> Memberships</div><div className="dash-nav-muted"><Bell size={17}/> Notifications</div><div className="dash-nav-muted"><CircleHelp size={17}/> Help & support</div></aside><main className="dash-content"><div className="dash-welcome"><div><div className="section-kicker">{config.label} WORKSPACE</div><h1>{config.title}</h1><p>{config.desc}</p></div><div className="dash-date">{new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div><div className="setup-notice"><ShieldCheck size={20}/><div><b>Your account is connected</b><p>This workspace will be connected to live gym and membership data in the next build step.</p></div></div><div className="dash-placeholder-grid"><div className="dash-placeholder"><span>ACCOUNT</span><b>{profile.name || 'Account holder'}</b><small>{user.email}</small></div><div className="dash-placeholder"><span>ACCESS ROLE</span><b>{config.label}</b><small>Verified account permission</small></div><div className="dash-placeholder"><span>WORKSPACE</span><b>{profile.gymName || 'Not assigned'}</b><small>{profile.gymId || 'Workspace connection pending'}</small></div></div></main></div></div>}</Protected>
 }
 
 export default function App() {
